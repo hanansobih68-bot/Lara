@@ -1,0 +1,73 @@
+import discord
+from discord import app_commands
+import requests
+from bs4 import BeautifulSoup
+import cloudscraper
+import asyncio
+
+# --- Setup ---
+intents = discord.Intents.default()
+bot = discord.Client(intents=intents)
+tree = app_commands.CommandTree(bot)
+
+headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+}
+
+scraper = cloudscraper.create_scraper()
+
+async def fetch_vbucks_missions():
+    try:
+        response = scraper.get("https://fortnitedb.com/", headers=headers, timeout=15)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Look for V-Bucks section (selectors may need small updates over time)
+        data = []
+        # Adjust these selectors if the site changes
+        vbucks_section = soup.find(string=lambda text: text and "V-Bucks Missions" in text)
+        
+        if vbucks_section:
+            table = vbucks_section.find_parent('table') or soup.find('table')
+            if table:
+                rows = table.find_all('tr')
+                for row in rows[1:]:  # skip header
+                    cells = row.find_all('td')
+                    if len(cells) >= 3:
+                        zone = cells[0].get_text(strip=True)
+                        power = cells[1].get_text(strip=True)
+                        reward = cells[2].get_text(strip=True)
+                        if "V-Bucks" in reward:
+                            data.append(f"**{zone}** | PWR {power} → **{reward}**")
+        
+        return data if data else ["No V-Bucks missions available right now."]
+    
+    except Exception as e:
+        return [f"Error fetching data: {str(e)}"]
+
+# ==================== COMMAND ====================
+@tree.command(name="vbucks", description="Show current Save the World V-Bucks mission alerts")
+async def vbucks(interaction: discord.Interaction):
+    await interaction.response.defer()
+    
+    await interaction.followup.send("🔄 Fetching current V-Bucks missions...")
+    
+    missions = await fetch_vbucks_missions()
+    
+    embed = discord.Embed(
+        title="🎟️ Fortnite STW - V-Bucks Mission Alerts",
+        color=0xFFD700,
+        timestamp=discord.utils.utcnow()
+    )
+    
+    embed.description = "\n".join(missions[:10])  # limit to avoid too long message
+    
+    embed.set_footer(text="Data from FortniteDB • Updates daily")
+    
+    await interaction.followup.send(embed=embed)
+
+# ==================== BOT START ====================
+@bot.event
+async def on_ready():
+    await tree.sync()
+    print(f"✅ Bot is online! {bot.user} - /vbucks command ready")
+
