@@ -1,0 +1,70 @@
+import discord
+from discord.ext import commands
+import requests
+import asyncio
+import json
+
+bot = commands.Bot(command_prefix='!', intents=discord.Intents.default())
+
+# Simple scraper from a reliable public site (no Epic login needed)
+async def get_vbucks_missions():
+    try:
+        # Option 1: FortniteDB (easy to parse)
+        response = requests.get("https://fortnitedb.com/api/v1/mission-alerts", timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            vbucks = [m for m in data if m.get("reward_type") == "vbucks" or "V-Bucks" in str(m.get("reward"))]
+            return vbucks
+        
+        # Fallback: Scrape HTML if needed (or use another site)
+    except:
+        pass
+    return None
+
+@bot.command(name="vbucks", aliases=["vb", "missionalert", "alert"])
+async def vbucks_alert(ctx):
+    await ctx.send("🔍 Checking for VBucks mission alerts...")
+    
+    missions = await get_vbucks_missions()
+    
+    if not missions or len(missions) == 0:
+        embed = discord.Embed(
+            title="❌ No VBucks Missions Right Now",
+            description="No Mini-Boss alerts rewarding V-Bucks today.\nCheck again later or tomorrow!",
+            color=discord.Color.red()
+        )
+        embed.set_footer(text="Fortnite Save the World • Updates daily")
+        await ctx.send(embed=embed)
+        return
+    
+    # Create nice embed
+    embed = discord.Embed(
+        title="💰 VBucks Mission Alerts Found!",
+        description="Current Mini-Boss missions rewarding V-Bucks:",
+        color=discord.Color.gold()
+    )
+    
+    for m in missions[:5]:  # Limit to avoid huge message
+        zone = m.get("zone", "Unknown")
+        reward = m.get("reward", "50 V-Bucks")
+        mission_type = m.get("mission_type", "Mini-Boss")
+        time_left = m.get("time_left", "Unknown")
+        
+        embed.add_field(
+            name=f"{zone} - {mission_type}",
+            value=f"**Reward:** {reward}\n**Time Left:** {time_left}",
+            inline=False
+        )
+    
+    embed.set_footer(text="Data from Fortnite trackers • Play before they expire!")
+    await ctx.send(embed=embed)
+
+# Optional: Auto-check every X hours
+@tasks.loop(hours=6)
+async def auto_vbucks():
+    channel = bot.get_channel(YOUR_CHANNEL_ID_HERE)  # Put your channel ID
+    if channel:
+        # Reuse the same logic as above and send without command
+        pass
+
+bot.run("YOUR_BOT_TOKEN")
