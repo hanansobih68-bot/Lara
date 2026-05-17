@@ -1,0 +1,71 @@
+import discord
+from discord import app_commands
+import cloudscraper
+from bs4 import BeautifulSoup
+from dotenv import load_dotenv
+import os
+
+load_dotenv()  # Loads the .env file
+
+# --- Bot Setup ---
+intents = discord.Intents.default()
+bot = discord.Client(intents=intents)
+tree = app_commands.CommandTree(bot)
+
+scraper = cloudscraper.create_scraper()
+
+async def get_vbucks_missions():
+    try:
+        # Try FortniteDB first
+        r = scraper.get("https://fortnitedb.com/", timeout=15)
+        soup = BeautifulSoup(r.text, 'html.parser')
+        
+        # Look for V-Bucks section
+        vbucks_text = soup.find(string=lambda text: text and "V-Bucks Missions" in text)
+        if vbucks_text:
+            parent = vbucks_text.find_parent()
+            if parent and "No V-Bucks Missions today" in parent.get_text():
+                return ["**No V-Bucks missions available today.**"]
+        
+        # Fallback message with links
+        return [
+            "**Check these live trackers:**",
+            "• [FortniteDB](https://fortnitedb.com/)",
+            "• [STW Planner V-Bucks](https://stw-planner.com/mission-alerts/v-buck-missions)",
+            "• [FreeTheVBucks](https://freethevbucks.com/timed-missions/)"
+        ]
+        
+    except Exception as e:
+        return [f"❌ Could not fetch data right now.\nError: {str(e)[:100]}"]
+
+# ===================== COMMAND =====================
+@tree.command(name="vbucks", description="Show current STW V-Bucks mission alerts")
+async def vbucks_command(interaction: discord.Interaction):
+    await interaction.response.defer()
+    
+    await interaction.followup.send("🔄 Checking for V-Bucks missions...")
+    
+    missions = await get_vbucks_missions()
+    
+    embed = discord.Embed(
+        title="🎟️ Save the World - V-Bucks Alerts",
+        description="\n".join(missions),
+        color=0xFFD700  # Gold color
+    )
+    
+    embed.set_footer(text="Missions reset daily • Use the links above")
+    
+    await interaction.followup.send(embed=embed)
+
+# ===================== START BOT =====================
+@bot.event
+async def on_ready():
+    await tree.sync()
+    print(f"✅ Bot is online as {bot.user} — /vbucks command is ready!")
+
+if __name__ == "__main__":
+    token = os.getenv("DISCORD_TOKEN")
+    if not token:
+        print("❌ DISCORD_TOKEN not found in .env file!")
+    else:
+        bot.run(token)
